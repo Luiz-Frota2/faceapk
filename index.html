@@ -107,16 +107,36 @@
         let isRunning = false;
         let detectionInterval = null;
         
+        // Carrega os modelos do face-api.js
+        async function loadModels() {
+            try {
+                // Usando modelos de um CDN público
+                await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+                await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+                await faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+                await faceapi.nets.faceExpressionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+                
+                resultsDiv.innerHTML += '<p>Modelos carregados com sucesso!</p>';
+                return true;
+            } catch (err) {
+                resultsDiv.innerHTML += `<p>Erro ao carregar modelos: ${err}</p>`;
+                return false;
+            }
+        }
+        
+        // Carrega os modelos quando a página é aberta
+        document.addEventListener('DOMContentLoaded', loadModels);
+        
         // Inicia a câmera
         startButton.addEventListener('click', async () => {
             try {
-                // Carrega os modelos do face-api.js
-                await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
-                    faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-                    faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
-                    faceapi.nets.faceExpressionNet.loadFromUri('/models')
-                ]);
+                // Verifica se os modelos foram carregados
+                if (!faceapi.nets.tinyFaceDetector.params) {
+                    const modelsLoaded = await loadModels();
+                    if (!modelsLoaded) {
+                        throw new Error('Não foi possível carregar os modelos');
+                    }
+                }
                 
                 // Inicia o stream da câmera
                 stream = await navigator.mediaDevices.getUserMedia({ video: {} });
