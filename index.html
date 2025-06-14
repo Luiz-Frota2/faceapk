@@ -14,20 +14,24 @@
         }
         #videoContainer {
             position: relative;
-            margin: 20px 0;
+            margin: 20px auto;
+            width: 640px;
+            height: 480px;
         }
         #video {
             background: #000;
             width: 100%;
-            max-width: 640px;
+            height: 100%;
             border-radius: 8px;
+            transform: scaleX(-1); /* Espelha a imagem da câmera */
         }
         #canvas {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
-            max-width: 640px;
+            height: 100%;
+            transform: scaleX(-1); /* Espelha para corresponder ao vídeo */
         }
         button {
             background: #4285f4;
@@ -50,38 +54,29 @@
             border-radius: 4px;
             min-height: 100px;
         }
-        .face-box {
-            position: absolute;
-            border: 2px solid #00ff00;
-            background: rgba(0, 255, 0, 0.1);
+        .controls {
+            margin: 20px 0;
         }
-        .face-label {
-            position: absolute;
-            background: rgba(0, 255, 0, 0.7);
-            color: white;
-            padding: 2px 5px;
-            font-size: 12px;
-            border-radius: 2px;
+        #nameInput {
+            padding: 8px;
+            width: 200px;
+            margin-right: 10px;
         }
     </style>
 </head>
 <body>
     <h1>Sistema de Reconhecimento Facial</h1>
     
-    <div>
+    <div class="controls">
         <button id="startButton">Iniciar Câmera</button>
         <button id="stopButton" disabled>Parar Câmera</button>
+        <input type="text" id="nameInput" placeholder="Digite o nome">
         <button id="registerButton" disabled>Registrar Rosto</button>
     </div>
     
     <div id="videoContainer">
-        <video id="video" width="640" height="480" autoplay muted></video>
-        <canvas id="canvas" width="640" height="480"></canvas>
-    </div>
-    
-    <div>
-        <label for="nameInput">Nome:</label>
-        <input type="text" id="nameInput" placeholder="Digite o nome para registrar">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
     </div>
     
     <h2>Resultados:</h2>
@@ -99,6 +94,7 @@
         const registerButton = document.getElementById('registerButton');
         const nameInput = document.getElementById('nameInput');
         const resultsDiv = document.getElementById('results');
+        const videoContainer = document.getElementById('videoContainer');
         
         // Variáveis do sistema
         let stream = null;
@@ -110,11 +106,12 @@
         // Carrega os modelos do face-api.js
         async function loadModels() {
             try {
+                resultsDiv.innerHTML += '<p>Carregando modelos... (pode demorar alguns segundos)</p>';
+                
                 // Usando modelos de um CDN público
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
                 await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
                 await faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-                await faceapi.nets.faceExpressionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
                 
                 resultsDiv.innerHTML += '<p>Modelos carregados com sucesso!</p>';
                 return true;
@@ -124,11 +121,8 @@
             }
         }
         
-        // Carrega os modelos quando a página é aberta
-        document.addEventListener('DOMContentLoaded', loadModels);
-        
         // Inicia a câmera
-        startButton.addEventListener('click', async () => {
+        async function startCamera() {
             try {
                 // Verifica se os modelos foram carregados
                 if (!faceapi.nets.tinyFaceDetector.params) {
@@ -139,8 +133,25 @@
                 }
                 
                 // Inicia o stream da câmera
-                stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user' // Usa a câmera frontal
+                    } 
+                });
+                
                 video.srcObject = stream;
+                
+                // Espera o vídeo estar pronto
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        // Ajusta o tamanho do canvas para corresponder ao vídeo
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        resolve();
+                    };
+                });
                 
                 startButton.disabled = true;
                 stopButton.disabled = false;
@@ -148,16 +159,19 @@
                 isRunning = true;
                 
                 // Inicia a detecção facial
-                detectionInterval = setInterval(detectFaces, 300);
+                detectionInterval = setInterval(detectFaces, 100);
                 
                 resultsDiv.innerHTML += '<p>Câmera iniciada com sucesso!</p>';
             } catch (err) {
                 resultsDiv.innerHTML += `<p>Erro ao acessar a câmera: ${err}</p>`;
+                if (err.name === 'NotAllowedError') {
+                    resultsDiv.innerHTML += '<p>Permissão para acessar a câmera foi negada.</p>';
+                }
             }
-        });
+        }
         
         // Para a câmera
-        stopButton.addEventListener('click', () => {
+        function stopCamera() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 video.srcObject = null;
@@ -174,11 +188,11 @@
                 
                 resultsDiv.innerHTML += '<p>Câmera parada.</p>';
             }
-        });
+        }
         
         // Registra um novo rosto
-        registerButton.addEventListener('click', async () => {
-            if (!isRunning || !nameInput.value) {
+        async function registerFace() {
+            if (!isRunning || !nameInput.value.trim()) {
                 resultsDiv.innerHTML += '<p>Por favor, digite um nome e inicie a câmera.</p>';
                 return;
             }
@@ -195,14 +209,14 @@
                 
                 // Armazena o descritor facial e o nome
                 faceDescriptors.push(detections[0].descriptor);
-                faceNames.push(nameInput.value);
+                faceNames.push(nameInput.value.trim());
                 
-                resultsDiv.innerHTML += `<p>Rosto registrado como: ${nameInput.value}</p>`;
+                resultsDiv.innerHTML += `<p>Rosto registrado como: ${nameInput.value.trim()}</p>`;
                 nameInput.value = '';
             } catch (err) {
                 resultsDiv.innerHTML += `<p>Erro ao registrar rosto: ${err}</p>`;
             }
-        });
+        }
         
         // Função para detectar rostos
         async function detectFaces() {
@@ -219,8 +233,10 @@
                 context.clearRect(0, 0, canvas.width, canvas.height);
                 
                 // Desenha os resultados
-                const displaySize = { width: video.width, height: video.height };
-                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                const resizedDetections = faceapi.resizeResults(detections, {
+                    width: video.videoWidth,
+                    height: video.videoHeight
+                });
                 
                 // Desenha os retângulos dos rostos detectados
                 faceapi.draw.drawDetections(canvas, resizedDetections);
@@ -245,6 +261,14 @@
                 console.error('Erro na detecção:', err);
             }
         }
+        
+        // Event listeners
+        startButton.addEventListener('click', startCamera);
+        stopButton.addEventListener('click', stopCamera);
+        registerButton.addEventListener('click', registerFace);
+        
+        // Carrega os modelos quando a página é aberta
+        document.addEventListener('DOMContentLoaded', loadModels);
     </script>
 </body>
 </html>
